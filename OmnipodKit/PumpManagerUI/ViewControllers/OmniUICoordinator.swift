@@ -53,11 +53,11 @@ enum OmniUIScreen {
             return .pairAndPrime
         case .pairAndPrime:
             return .podSiteReview
-        case .podSiteReview
+        case .podSiteReview:
             return .confirmAttachment
-        case .confirmAttachment
+        case .confirmAttachment:
             return .podSitePhotoCapture
-        case .podSitePhotoCapture
+        case .podSitePhotoCapture:
             return .insertCannula
         case .insertCannula:
             return .checkInsertedCannula
