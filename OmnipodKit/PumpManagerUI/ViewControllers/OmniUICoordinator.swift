@@ -26,8 +26,10 @@ enum OmniUIScreen {
     case selectPodType
     case rileyLinkSetup // will be skipped for non-Eros pods
     case pairAndPrime
+    case podSiteReview
     case insertCannula
     case confirmAttachment
+    case podSitePhotoCapture
     case checkInsertedCannula
     case setupComplete
     case pendingCommandRecovery
@@ -50,8 +52,12 @@ enum OmniUIScreen {
         case .rileyLinkSetup: // will be skipped for non-Eros pods
             return .pairAndPrime
         case .pairAndPrime:
+            return .podSiteReview
+        case .podSiteReview
             return .confirmAttachment
-        case .confirmAttachment:
+        case .confirmAttachment
+            return .podSitePhotoCapture
+        case .podSitePhotoCapture
             return .insertCannula
         case .insertCannula:
             return .checkInsertedCannula
@@ -100,6 +106,7 @@ class OmniUICoordinator: UINavigationController, PumpManagerOnboarding, Completi
     private var allowedInsulinTypes: [InsulinType]
 
     private var allowDebugFeatures: Bool
+    private var pendingSiteZone: PodSiteZone?
 
     private func viewControllerForScreen(_ screen: OmniUIScreen) -> UIViewController {
         switch screen {
@@ -266,6 +273,21 @@ class OmniUICoordinator: UINavigationController, PumpManagerOnboarding, Completi
             view.navigationItem.backButtonDisplayMode = .generic
             return view
 
+        case .podSiteReview:
+            let viewModel = PodSiteReviewViewModel(store: .shared)
+            viewModel.didFinish = { [weak self] zone in
+                self?.pendingSiteZone = zone
+                self?.stepFinished()
+            }
+            viewModel.didRequestDeactivation = { [weak self] in
+                self?.navigateTo(.deactivate)
+            }
+
+            let view = hostingController(rootView: PodSiteReviewView(viewModel: viewModel))
+            view.navigationItem.title = LocalizedString("Pod Site", comment: "Title for pod site review screen")
+            view.navigationItem.backButtonDisplayMode = .generic
+            return view    
+
         case .confirmAttachment:
             let view = AttachPodView(
                 didConfirmAttachment: { [weak self] in
@@ -282,6 +304,20 @@ class OmniUICoordinator: UINavigationController, PumpManagerOnboarding, Completi
             vc.navigationItem.title = LocalizedString("Attach Pod", comment: "Title for Attach Pod screen")
             vc.navigationItem.hidesBackButton = true
             return vc
+
+        case .podSitePhotoCapture:
+            guard let zone = pendingSiteZone else {
+                fatalError("podSitePhotoCapture reached without a zone from podSiteReview")
+            }
+            let viewModel = PodSitePhotoCaptureViewModel(store: .shared, zone: zone)
+            viewModel.didFinish = { [weak self] in
+                self?.stepFinished()
+            }
+
+            let view = hostingController(rootView: PodSitePhotoCaptureView(viewModel: viewModel))
+            view.navigationItem.title = LocalizedString("Photograph Site", comment: "Title for pod site photo capture screen")
+            view.navigationItem.hidesBackButton = true
+            return view
 
         case .insertCannula:
             let viewModel = InsertCannulaViewModel(cannulaInserter: pumpManager)
