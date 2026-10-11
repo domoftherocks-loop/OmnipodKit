@@ -93,7 +93,7 @@ class OmniSettingsViewModel: ObservableObject {
 
     // Expiration reminder date for current pod
     @Published var expirationReminderDate: Date?
-    
+
     var allowedScheduledReminderDates: [Date]? {
         return pumpManager.allowedExpirationReminderDates
     }
@@ -145,6 +145,7 @@ class OmniSettingsViewModel: ObservableObject {
 
     @Published var previousPodDetails: PodDetails?
 
+    @Published var controllerId: UInt32
 
     var timeZone: TimeZone {
         return pumpManager.status.timeZone
@@ -186,6 +187,20 @@ class OmniSettingsViewModel: ObservableObject {
         } else {
             return nil
         }
+    }
+
+    /// Persistent advisory: this pod uses the InPlay BLE variant AND this iPhone model (iPhone 16
+    /// family / iPhone 17e) is known to trigger its firmware bug — connections can stall and are
+    /// automatically retried, so slower-than-normal connects are expected. Shown as a standing
+    /// notice in settings (with a detail view), not a transient alert.
+    var connectionSlownessExpected: Bool {
+        return UIDevice.hasPossibleInPlayBLEIssues && pumpManager.usingInPlayPod == true
+    }
+
+    /// A host asked the pump to provide background heartbeats on a combination needing the eager-connect
+    /// mitigation: wakes come from link drops rather than the usual timer probe, so they're less regular.
+    var bleHeartbeatDegraded: Bool {
+        return pumpManager.bleHeartbeatDegradedForThisPod
     }
 
     var isScheduledBasal: Bool {
@@ -244,11 +259,16 @@ class OmniSettingsViewModel: ObservableObject {
 
     var navigateTo: ((OmniUIScreen) -> Void)?
 
+    func refreshO5IdsFromCertStore() {
+        pumpManager.refreshO5IdsFromCertStore()
+        controllerId = pumpManager.state.controllerId // save the updated controllerId
+    }
+
     private let pumpManager: OmniPumpManager
 
     init(pumpManager: OmniPumpManager) {
         self.pumpManager = pumpManager
-        
+
         lifeState = pumpManager.lifeState
         activatedAt = pumpManager.podActivatedAt
         expiresAt = pumpManager.expiresAt
@@ -263,22 +283,21 @@ class OmniSettingsViewModel: ObservableObject {
         podCommState = pumpManager.podCommState
         beepPreference = pumpManager.beepPreference
         silencePodPreference = pumpManager.silencePod ? .enabled : .disabled
-        podKeepAlivePreference = Storage.shared.podKeepAlive.value
         silencePodEnd = pumpManager.silencePodEnd
+        podKeepAlivePreference = pumpManager.podKeepAlive
         hasConnection = pumpManager.hasConnection
         insulinType = pumpManager.insulinType
         podDetails = pumpManager.podDetails
         previousPodDetails = pumpManager.previousPodDetails
+        controllerId = pumpManager.state.controllerId
 
         pumpManager.addPodStateObserver(self, queue: DispatchQueue.main)
         pumpManager.addStatusObserver(self, queue: DispatchQueue.main)
 
-        pumpManager.setSyncSilencePodState(syncSilencePodState)
-
         // Trigger refresh
         pumpManager.getPodStatus() { _ in }
 
-        if pumpManager.podType.usesRileyLink {
+        if pumpManager.podType.isEros {
             pumpManager.updateRLConnectionStatus()
         }
     }
@@ -398,14 +417,6 @@ class OmniSettingsViewModel: ObservableObject {
         }
     }
 
-    /// Called by the Omni pump manager after the silencePodEnd reached and silence pod mode disabled.
-    func syncSilencePodState(_ silencePod: Bool, _ silencePodEnd: Date?) {
-        DispatchQueue.main.async {
-            self.silencePodPreference = silencePod ? .enabled : .disabled
-            self.silencePodEnd = silencePodEnd
-        }
-    }
-
     func setSilencePod(_ silencePodPreference: SilencePodPreference, silencePodEnd: Date?,
                        _ completion: @escaping (_ error: LocalizedError?) -> Void)
     {
@@ -423,6 +434,7 @@ class OmniSettingsViewModel: ObservableObject {
 
     func setPodKeepAlive(_ podKeepAlivePreference: PodKeepAlive) {
         self.podKeepAlivePreference = podKeepAlivePreference
+        pumpManager.podKeepAlive = podKeepAlivePreference
     }
 
     func didChangeInsulinType(_ newType: InsulinType?) {
@@ -562,6 +574,9 @@ class OmniSettingsViewModel: ObservableObject {
         return pumpManager.podType
     }
 
+    var noSilentBeep: Bool {
+        return pumpManager.noSilentBeep
+    }
 }
 
 
@@ -576,6 +591,8 @@ extension OmniSettingsViewModel: PodStateObserver {
         expirationReminderDate = self.pumpManager.scheduledExpirationReminder
         podCommState = self.pumpManager.podCommState
         beepPreference = self.pumpManager.beepPreference
+        silencePodPreference = self.pumpManager.silencePod ? .enabled : .disabled
+        silencePodEnd = self.pumpManager.silencePodEnd
         insulinType = self.pumpManager.insulinType
         podDetails = self.pumpManager.podDetails
         previousPodDetails = self.pumpManager.previousPodDetails
