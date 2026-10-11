@@ -306,9 +306,8 @@ class OmniUICoordinator: UINavigationController, PumpManagerOnboarding, Completi
             return vc
 
         case .podSitePhotoCapture:
-            guard let zone = pendingSiteZone else {
-                fatalError("podSitePhotoCapture reached without a zone from podSiteReview")
-            }
+            let zone = pendingSiteZone
+                   ?? PodSiteRotationAdvisor.recommendedZone(from: PodSiteLogStore.shared.loadAll())
             let viewModel = PodSitePhotoCaptureViewModel(store: .shared, zone: zone)
             viewModel.didFinish = { [weak self] in
                 self?.stepFinished()
